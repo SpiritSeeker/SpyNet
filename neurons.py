@@ -51,21 +51,89 @@ class MLE_Neuron:
 			total_steps = int(end_time/timestep)
 			v_s = np.zeros(total_steps+1)
 			w_s = np.zeros(total_steps+1)
+			i_s = np.zeros([total_steps+1,2])
 			t_s = np.linspace(0, end_time, num=total_steps+1)
 			v_s[0] = v_init
 			w_s[0] = w_init
+			i_s[0,0] = 0
+			i_s[0,1] = 0
 			if isinstance(i_ext, currents.CInput):
 				for i in range(total_steps):
-					v_s[i+1], w_s[i+1] = self.simulate_step(v_s[i], w_s[i], timestep, i_ext.i_next())
+					i_now = i_ext.i_next()
+					v_s[i+1], w_s[i+1] = self.simulate_step(v_s[i], w_s[i], timestep, i_now)
+					i_s[i,0] = i_now[0]
+					i_s[i,1] = i_now[1]
 
 			else:
 				for i in range(total_steps):
 					v_s[i+1], w_s[i+1] = self.simulate_step(v_s[i], w_s[i], timestep, [i_ext,0])
-		
+					i_s[i,0] = i_ext
+		else:
+			min_limit = int(10 / timestep)
+			max_limit = 1000
+			eq_threshold = 1e-6
+			v_s = [float(v_init)]
+			w_s = [float(w_init)]
+			i_s = [[0,0]]
+			t_s = [0]
+			t = 0
+			v_c = np.zeros(min_limit+1)
+			v_c[0] = v_init
+			v_int = float(v_init)
+			w_int = float(w_init)
+			if isinstance(i_ext, currents.CInput):
+				for i in range(min_limit):
+					i_now = i_ext.i_next()
+					i_s.append(i_now)
+					v_int, w_int = self.simulate_step(v_int, w_int, timestep, i_now)
+					v_s.append(v_int)
+					w_s.append(w_int)
+					v_c[i+1] = v_int
+					t += timestep
+					t_s.append(t)
+				while t < max_limit:
+					if (np.var(v_c) < eq_threshold) and i_ext.is_end():
+						break
+					i_now = i_ext.i_next()
+					i_s.append(i_now)
+					v_int, w_int = self.simulate_step(v_int, w_int, timestep, i_now)
+					v_s.append(v_int)
+					w_s.append(w_int)
+					v_c = np.roll(v_c, -1)
+					v_c[-1] = v_int
+					t += timestep
+					t_s.append(t)
+				v_s = np.asarray(v_s)
+				w_s = np.asarray(w_s)
+				i_s = np.asarray(i_s)
+				t_s = np.asarray(t_s)
+			else:
+				for i in range(min_limit):
+					i_s.append([i_ext,0])
+					v_int, w_int = self.simulate_step(v_int, w_int, timestep, [i_ext,0])
+					v_s.append(v_int)
+					w_s.append(w_int)
+					v_c[i+1] = v_int
+					t += timestep
+					t_s.append(t)
+				while t < max_limit:
+					if (np.var(v_c) < eq_threshold):
+						break
+					i_s.append([i_ext,0])
+					v_int, w_int = self.simulate_step(v_int, w_int, timestep, [i_ext,0])
+					v_s.append(v_int)
+					w_s.append(w_int)
+					v_c = np.roll(v_c, -1)
+					v_c[-1] = v_int
+					t += timestep
+					t_s.append(t)
+				v_s = np.asarray(v_s)
+				w_s = np.asarray(w_s)
+				i_s = np.asarray(i_s)
+				t_s = np.asarray(t_s)		
+					
+		return {'Voltage':v_s, 'w':w_s, 'Timepoints':t_s, 'Currents':i_s}		
 
-		return {'Voltage':v_s, 'w':w_s, 'Timepoints':t_s}		
-
-	# Add currents later			
 	def simulate_step(self, v, w, timestep, i_ext = [0,0]):
 		dv = self.get_dvdt(v, w, i_ext[0])
 		dw = self.get_dwdt(v, w)
