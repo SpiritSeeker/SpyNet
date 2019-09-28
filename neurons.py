@@ -2,11 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import currents
 
-class MLE_Neuron:
+class MLE_Neuron(object):
 	"""docstring for MLE_Neuron"""
 	def __init__(self, params = {'gca':4.4,'gk':8,'gl':2,'eca':120,'ek':-84,'el':-60,'phi':0.02,'V1':-1.2,'V2':18,'V3':2,'V4':30,'V5':2,'V6':30,'C':20}):
 		self.params = params
 		self.get_eq_points(0)
+		self.stable = True
 	
 	def m_inf(self, v):
 		return 0.5 * (1 + np.tanh((v-self.params['V1'])/self.params['V2']))	
@@ -41,6 +42,7 @@ class MLE_Neuron:
 		return (self.params['phi']*(self.w_inf(v)-w)) / self.tau_w(v)
 
 	def simulate(self, v_init = None, w_init = None, i_ext = 0, timestep = 1e-3, end_time = None):
+		self.stable = False
 		if v_init is None:
 			v_init = self.eq_points['v_eq']
 		if w_init is None:
@@ -69,74 +71,67 @@ class MLE_Neuron:
 					v_s[i+1], w_s[i+1] = self.simulate_step(v_s[i], w_s[i], timestep, [i_ext,0])
 					i_s[i,0] = i_ext
 		else:
-			min_limit = int(10 / timestep)
 			max_limit = 1000
-			eq_threshold = 1e-6
+			min_limit = int(10 / timestep)
+			eq_threshold = 1e-9
 			v_s = [float(v_init)]
 			w_s = [float(w_init)]
 			i_s = [[0,0]]
 			t_s = [0]
 			t = 0
-			v_c = np.zeros(min_limit+1)
-			v_c[0] = v_init
 			v_int = float(v_init)
 			w_int = float(w_init)
 			if isinstance(i_ext, currents.CInput):
-				for i in range(min_limit):
-					i_now = i_ext.i_next()
-					i_s.append(i_now)
-					v_int, w_int = self.simulate_step(v_int, w_int, timestep, i_now)
-					v_s.append(v_int)
-					w_s.append(w_int)
-					v_c[i+1] = v_int
-					t += timestep
-					t_s.append(t)
 				while t < max_limit:
-					if (np.var(v_c) < eq_threshold) and i_ext.is_end():
+					if self.stable and i_ext.is_end():
+						for i in range(min_limit):
+							i_now = i_ext.i_next()
+							i_s.append(i_now)
+							v_int, w_int = self.simulate_step(v_int, w_int, timestep, i_now, eq_threshold)
+							v_s.append(v_int)
+							w_s.append(w_int)
+							t += timestep
+							t_s.append(t)
 						break
 					i_now = i_ext.i_next()
 					i_s.append(i_now)
-					v_int, w_int = self.simulate_step(v_int, w_int, timestep, i_now)
+					v_int, w_int = self.simulate_step(v_int, w_int, timestep, i_now, eq_threshold)
 					v_s.append(v_int)
 					w_s.append(w_int)
-					v_c = np.roll(v_c, -1)
-					v_c[-1] = v_int
 					t += timestep
-					t_s.append(t)
-				v_s = np.asarray(v_s)
-				w_s = np.asarray(w_s)
-				i_s = np.asarray(i_s)
-				t_s = np.asarray(t_s)
+					t_s.append(t)	
+
 			else:
-				for i in range(min_limit):
-					i_s.append([i_ext,0])
-					v_int, w_int = self.simulate_step(v_int, w_int, timestep, [i_ext,0])
-					v_s.append(v_int)
-					w_s.append(w_int)
-					v_c[i+1] = v_int
-					t += timestep
-					t_s.append(t)
 				while t < max_limit:
-					if (np.var(v_c) < eq_threshold):
+					if self.stable:
+						for i in range(min_limit):
+							i_s.append([i_ext,0])
+							v_int, w_int = self.simulate_step(v_int, w_int, timestep, [i_ext,0], eq_threshold)
+							v_s.append(v_int)
+							w_s.append(w_int)
+							t += timestep
+							t_s.append(t)
 						break
 					i_s.append([i_ext,0])
-					v_int, w_int = self.simulate_step(v_int, w_int, timestep, [i_ext,0])
+					v_int, w_int = self.simulate_step(v_int, w_int, timestep, [i_ext,0], eq_threshold)
 					v_s.append(v_int)
 					w_s.append(w_int)
-					v_c = np.roll(v_c, -1)
-					v_c[-1] = v_int
 					t += timestep
 					t_s.append(t)
-				v_s = np.asarray(v_s)
-				w_s = np.asarray(w_s)
-				i_s = np.asarray(i_s)
-				t_s = np.asarray(t_s)		
-					
+
+			v_s = np.asarray(v_s)
+			w_s = np.asarray(w_s)
+			i_s = np.asarray(i_s)
+			t_s = np.asarray(t_s)		
+
 		return {'Voltage':v_s, 'w':w_s, 'Timepoints':t_s, 'Currents':i_s}		
 
-	def simulate_step(self, v, w, timestep, i_ext = [0,0]):
+	def simulate_step(self, v, w, timestep, i_ext = [0,0], eq_threshold = 1e-9):
 		dv = self.get_dvdt(v, w, i_ext[0])
 		dw = self.get_dwdt(v, w)
+		ds = np.abs(dv) + np.abs(dw*100)
+		if ds < eq_threshold:
+			self.stable = True
 		v += (timestep * dv) + (i_ext[1] / self.params['C'])
 		w += timestep * dw
 		return v, w
