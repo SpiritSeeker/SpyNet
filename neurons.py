@@ -1,11 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import currents
+from copy import deepcopy
 
 class MLE_Neuron(object):
 	"""docstring for MLE_Neuron"""
 	def __init__(self, params = {'gca':4.4,'gk':8,'gl':2,'eca':120,'ek':-84,'el':-60,'phi':0.02,'V1':-1.2,'V2':18,'V3':2,'V4':30,'V5':2,'V6':30,'C':20}):
-		self.params = params
+		self.params = deepcopy(params)
 		self.get_eq_points(0)
 		self.stable = True
 	
@@ -135,3 +136,61 @@ class MLE_Neuron(object):
 		v += (timestep * dv) + (i_ext[1] / self.params['C'])
 		w += timestep * dw
 		return v, w
+
+
+class HH_Neuron(object):
+	"""docstring for HH_Neuron"""
+	def __init__(self, params = {'gk':36,'gna':120,'gl':0.3,'ek':-72,'ena':55,'el':-50,'C':1,'an':-0.01,'bn':50,'cn':10,'dn':-1,'pn':0.125,'qn':60,'rn':80,'am':-0.1,'bm':35,'cm':10,'dm':-1,'pm':4,'qm':60,'rm':18,'bh':30,'ch':10,'dh':1,'ph':0.07,'qh':60,'rh':20}):
+		self.params = deepcopy(params)
+		self.get_eq_points(0)
+		self.stable = True
+	
+	def alpha_n(self, v):
+		return (np.finfo(float).eps * (self.params['an'] / ((-1 * self.params['bn'] / self.params['cn']) * np.exp((-1 * self.params['bn'] / self.params['cn'])))) + self.params['an'] * (v + self.params['bn'])) / (np.finfo(float).eps + np.exp(-1 * (v + self.params['bn']) / self.params['cn']) + self.params['dn'])
+
+	def beta_n(self, v):
+		return self.params['pn'] * np.exp(-1 * (v + self.params['qn']) / self.params['rn'])
+
+	def alpha_m(self, v):
+		return (np.finfo(float).eps * (self.params['an'] / ((-1 * self.params['bn'] / self.params['cn']) * np.exp((-1 * self.params['bn'] / self.params['cn'])))) + self.params['am'] * (v + self.params['bm'])) / (np.finfo(float).eps + np.exp(-1 * (v + self.params['bm']) / self.params['cm']) + self.params['dm'])
+
+	def beta_m(self, v):
+		return self.params['pm'] * np.exp(-1 * (v + self.params['qm']) / self.params['rm'])	
+
+	def alpha_h(self, v):
+		return self.params['ph'] * np.exp(-1 * (v + self.params['qh']) / self.params['rh'])
+
+	def beta_h(self, v):
+		return 1 / (np.exp(-1 * (v + self.params['bh']) / self.params['ch']) + self.params['dh'])
+
+	def n_inf(self, v):
+		return self.alpha_n(v) / (self.alpha_n(v) + self.beta_n(v))
+
+	def m_inf(self, v):
+		return self.alpha_m(v) / (self.alpha_m(v) + self.beta_m(v))
+
+	def h_inf(self, v):
+		return self.alpha_h(v) / (self.alpha_h(v) + self.beta_h(v))	
+
+	def get_dvdt(self, v, n, m, h, i_ext):
+		return (i_ext - (self.params['gk'] * (n**4) * (v - self.params['ek'])) - (self.params['gna'] * (m**3) * h * (v - self.params['ena'])) - (self.params['gl'] * (v - self.params['el']))) / self.params['C']
+
+	def get_dndt(self, v, n):
+		return (self.alpha_n(v) * (1-n)) - (self.beta_n(v) * n)
+
+	def get_dmdt(self, v, m):
+		return (self.alpha_m(v) * (1-m)) - (self.beta_m(v) * m)
+
+	def get_dhdt(self, v, h):
+		return (self.alpha_h(v) * (1-h)) - (self.beta_h(v) * h)
+
+	def get_eq_points(self, i_ext):
+		v_lower = min(self.params['ek'],self.params['el'],self.params['ena'])
+		v_upper = max(self.params['ek'],self.params['el'],self.params['ena'])
+		v = np.linspace(v_lower, v_upper, (v_upper-v_lower)/0.0001, endpoint=True)
+		v_nc = (i_ext - (self.params['gk']*(self.n_inf(v)**4)*(v-self.params['ek']))-(self.params['gl']*(v-self.params['el']))) / (np.finfo(float).eps+self.params['gna']*(self.m_inf(v)**3)*(v-self.params['ena']))
+		h_nc = self.h_inf(v)
+		# self.ncs = {'v':v, 'v_null_cline':v_nc, 'h_null_cline':h_nc}
+		idx = np.argwhere(np.diff(np.sign(v_nc - h_nc))).flatten()
+		v_eq = np.min(v[idx])
+		self.eq_points = {'v_eq':v_eq, 'n_eq':self.n_inf(v_eq), 'm_eq':self.m_inf(v_eq), 'h_eq':self.h_inf(v_eq)}	
