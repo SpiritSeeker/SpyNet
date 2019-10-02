@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import currents
 from copy import deepcopy
 
+# Add multiple eq points with J
+
 class MLE_Neuron(object):
 	"""docstring for MLE_Neuron"""
 	def __init__(self, params = {'gca':4.4,'gk':8,'gl':2,'eca':120,'ek':-84,'el':-60,'phi':0.02,'V1':-1.2,'V2':18,'V3':2,'V4':30,'V5':2,'V6':30,'C':20}):
@@ -193,4 +195,99 @@ class HH_Neuron(object):
 		# self.ncs = {'v':v, 'v_null_cline':v_nc, 'h_null_cline':h_nc}
 		idx = np.argwhere(np.diff(np.sign(v_nc - h_nc))).flatten()
 		v_eq = np.min(v[idx])
-		self.eq_points = {'v_eq':v_eq, 'n_eq':self.n_inf(v_eq), 'm_eq':self.m_inf(v_eq), 'h_eq':self.h_inf(v_eq)}	
+		self.eq_points = {'v_eq':v_eq, 'n_eq':self.n_inf(v_eq), 'm_eq':self.m_inf(v_eq), 'h_eq':self.h_inf(v_eq)}
+
+	def simulate(self, v_init = None, n_init = None, m_init = None, h_init = None, i_ext = 0, timestep = 1e-3, end_time = None):
+		self.stable = False
+		if v_init is None:
+			v_init = self.eq_points['v_eq']
+		if n_init is None:
+			n_init = self.eq_points['n_eq']
+		if m_init is None:
+			m_init = self.eq_points['m_eq']
+		if h_init is None:
+			h_init = self.eq_points['h_eq']
+		if isinstance(i_ext, currents.CInput):
+			i_ext.reset()
+		elif isinstance(i_ext, int) or isinstance(i_ext, float):
+			val = i_ext
+			i_ext = currents.CInput()
+			i_ext.add(currents.CStep(val, timestep = timestep))
+
+		if end_time is not None:
+			total_steps = int(end_time/timestep)
+			v_s = np.zeros(total_steps+1)
+			n_s = np.zeros(total_steps+1)
+			m_s = np.zeros(total_steps+1)
+			h_s = np.zeros(total_steps+1)
+			i_s = np.zeros([total_steps+1,2])
+			t_s = np.linspace(0, end_time, num = total_steps + 1)
+			v_s[0] = v_init
+			n_s[0] = n_init
+			m_s[0] = m_init
+			h_s[0] = h_init
+			i_s[0,0] = 0
+			i_s[0,1] = 0
+			for i in range(total_steps):
+				i_now = i_ext.i_next()
+				v_s[i+1], n_s[i+1], m_s[i+1], h_s[i+1] = self.simulate_step(v_s[i], n_s[i], m_s[i], h_s[i], timestep, i_now)
+				i_s[i+1,0] = i_now[0]
+				i_s[i+1,1] = i_now[1]
+
+		else:
+			max_limit = 1000
+			min_limit = int(10 / timestep)
+			v_s = [float(v_init)]
+			n_s = [float(n_init)]
+			m_s = [float(m_init)]
+			h_s = [float(h_init)]
+			i_s = [[0,0]]		
+			t_s = [0]
+			t = 0
+			v_int = float(v_init)
+			n_int = float(n_init)
+			m_int = float(m_init)
+			h_int = float(h_init)
+			while t < max_limit:
+				if self.stable and i_ext.is_end():
+					for i in range(min_limit):
+						i_now = i_ext.i_next()
+						i_s.append(i_now)
+						v_int, n_int, m_int, h_int = self.simulate_step(v_int, n_int, m_int, h_int, timestep, i_now)
+						v_s.append(v_int)
+						n_s.append(n_int)
+						m_s.append(m_int)
+						h_s.append(h_int)
+						t += timestep
+						t_s.append(t)
+					break
+				i_now = i_ext.i_next()
+				i_s.append(i_now)
+				v_int, n_int, m_int, h_int = self.simulate_step(v_int, n_int, m_int, h_int, timestep, i_now)
+				v_s.append(v_int)
+				n_s.append(n_int)
+				m_s.append(m_int)
+				h_s.append(h_int)
+				t += timestep
+				t_s.append(t)
+			v_s = np.asarray(v_s)
+			n_s = np.asarray(n_s)
+			m_s = np.asarray(m_s)
+			h_s = np.asarray(h_s)
+
+		return {'Voltage':v_s, 'n':n_s, 'm':m_s, 'h':h_s, 'Timepoints':t_s, 'Currents':i_s}		
+
+
+	def simulate_step(self, v, n, m, h, timestep, i_ext, eq_threshold = 1e-8):
+		dv = self.get_dvdt(v, n, m, h, i_ext[0])
+		dn = self.get_dndt(v, n)
+		dm = self.get_dmdt(v, m)
+		dh = self.get_dhdt(v, h)
+		ds = np.abs(dv) + np.abs(dn*100) + np.abs(dm*100) + np.abs(dh*100)
+		if ds < eq_threshold:
+			self.stable = True
+		v += (timestep * dv) + (i_ext[1] / self.params['C'])
+		n += timestep * dn
+		m += timestep * dm
+		h += timestep * dh
+		return v, n, m, h
