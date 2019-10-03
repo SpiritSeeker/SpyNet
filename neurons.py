@@ -5,11 +5,14 @@ from copy import deepcopy
 
 # Add multiple eq points with J
 
-class MLE_Neuron(object):
-	"""docstring for MLE_Neuron"""
-	def __init__(self, params = {'gca':4.4,'gk':8,'gl':2,'eca':120,'ek':-84,'el':-60,'phi':0.02,'V1':-1.2,'V2':18,'V3':2,'V4':30,'V5':2,'V6':30,'C':20}):
+class MLE_Soma(object):
+	"""docstring for MLE_Soma"""
+	def __init__(self, params = {'gca':4.4,'gk':8,'gl':2,'eca':120,'ek':-84,'el':-60,'phi':0.02,'V1':-1.2,'V2':18,'V3':2,'V4':30,'V5':2,'V6':30,'C':20}, n_id = None):
+		self.n_id = n_id
 		self.params = deepcopy(params)
 		self.get_eq_points(0)
+		self.membrane_potential = self.eq_points['v_eq']
+		self.w = self.eq_points['w_eq']
 		self.stable = True
 	
 	def m_inf(self, v):
@@ -129,7 +132,11 @@ class MLE_Neuron(object):
 
 		return {'Voltage':v_s, 'w':w_s, 'Timepoints':t_s, 'Currents':i_s}		
 
-	def simulate_step(self, v, w, timestep, i_ext = [0,0], eq_threshold = 1e-9):
+	def simulate_step(self, v = None, w = None, timestep = 1e-3, i_ext = [0,0], eq_threshold = 1e-9):
+		if v is None:
+			v = self.membrane_potential
+		if w is None:
+			w = self.w
 		dv = self.get_dvdt(v, w, i_ext[0])
 		dw = self.get_dwdt(v, w)
 		ds = np.abs(dv) + np.abs(dw*100)
@@ -137,14 +144,21 @@ class MLE_Neuron(object):
 			self.stable = True
 		v += (timestep * dv) + (i_ext[1] / self.params['C'])
 		w += timestep * dw
+		self.membrane_potential = v
+		self.w = w
 		return v, w
 
 
-class HH_Neuron(object):
-	"""docstring for HH_Neuron"""
-	def __init__(self, params = {'gk':36,'gna':120,'gl':0.3,'ek':-72,'ena':55,'el':-50,'C':1,'an':-0.01,'bn':50,'cn':10,'dn':-1,'pn':0.125,'qn':60,'rn':80,'am':-0.1,'bm':35,'cm':10,'dm':-1,'pm':4,'qm':60,'rm':18,'bh':30,'ch':10,'dh':1,'ph':0.07,'qh':60,'rh':20}):
+class HH_Soma(object):
+	"""docstring for HH_Soma"""
+	def __init__(self, params = {'gk':36,'gna':120,'gl':0.3,'ek':-72,'ena':55,'el':-50,'C':1,'an':-0.01,'bn':50,'cn':10,'dn':-1,'pn':0.125,'qn':60,'rn':80,'am':-0.1,'bm':35,'cm':10,'dm':-1,'pm':4,'qm':60,'rm':18,'bh':30,'ch':10,'dh':1,'ph':0.07,'qh':60,'rh':20}, n_id = None):
+		self.n_id = n_id
 		self.params = deepcopy(params)
 		self.get_eq_points(0)
+		self.membrane_potential = self.eq_points['v_eq']
+		self.n = self.eq_points['n_eq']
+		self.m = self.eq_points['m_eq']
+		self.h = self.eq_points['h_eq']
 		self.stable = True
 	
 	def alpha_n(self, v):
@@ -278,7 +292,15 @@ class HH_Neuron(object):
 		return {'Voltage':v_s, 'n':n_s, 'm':m_s, 'h':h_s, 'Timepoints':t_s, 'Currents':i_s}		
 
 
-	def simulate_step(self, v, n, m, h, timestep, i_ext, eq_threshold = 1e-8):
+	def simulate_step(self, v = None, n = None, m = None, h = None, timestep = 1e-3, i_ext = [0,0], eq_threshold = 1e-8):
+		if v is None:
+			v = self.membrane_potential
+		if n is None:
+			n = self.n
+		if m is None:
+			m = self.m
+		if h is None:
+			h = self.h			
 		dv = self.get_dvdt(v, n, m, h, i_ext[0])
 		dn = self.get_dndt(v, n)
 		dm = self.get_dmdt(v, m)
@@ -290,4 +312,8 @@ class HH_Neuron(object):
 		n += timestep * dn
 		m += timestep * dm
 		h += timestep * dh
+		self.membrane_potential = v
+		self.n = n
+		self.m = m
+		self.h = h
 		return v, n, m, h
