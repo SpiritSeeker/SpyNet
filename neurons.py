@@ -7,8 +7,7 @@ from copy import deepcopy
 
 class MLE_Soma(object):
 	"""docstring for MLE_Soma"""
-	def __init__(self, params = {'gca':4.4,'gk':8,'gl':2,'eca':120,'ek':-84,'el':-60,'phi':0.02,'V1':-1.2,'V2':18,'V3':2,'V4':30,'V5':2,'V6':30,'C':20}, n_id = None):
-		self.n_id = n_id
+	def __init__(self, params = {'gca':4.4,'gk':8,'gl':2,'eca':120,'ek':-84,'el':-60,'phi':0.02,'V1':-1.2,'V2':18,'V3':2,'V4':30,'V5':2,'V6':30,'C':20}):
 		self.params = deepcopy(params)
 		self.get_eq_points(0)
 		self.membrane_potential = self.eq_points['v_eq']
@@ -151,8 +150,7 @@ class MLE_Soma(object):
 
 class HH_Soma(object):
 	"""docstring for HH_Soma"""
-	def __init__(self, params = {'gk':36,'gna':120,'gl':0.3,'ek':-72,'ena':55,'el':-50,'C':1,'an':-0.01,'bn':50,'cn':10,'dn':-1,'pn':0.125,'qn':60,'rn':80,'am':-0.1,'bm':35,'cm':10,'dm':-1,'pm':4,'qm':60,'rm':18,'bh':30,'ch':10,'dh':1,'ph':0.07,'qh':60,'rh':20}, n_id = None):
-		self.n_id = n_id
+	def __init__(self, params = {'gk':36,'gna':120,'gl':0.3,'ek':-72,'ena':55,'el':-50,'C':1,'an':-0.01,'bn':50,'cn':10,'dn':-1,'pn':0.125,'qn':60,'rn':80,'am':-0.1,'bm':35,'cm':10,'dm':-1,'pm':4,'qm':60,'rm':18,'bh':30,'ch':10,'dh':1,'ph':0.07,'qh':60,'rh':20}):
 		self.params = deepcopy(params)
 		self.get_eq_points(0)
 		self.membrane_potential = self.eq_points['v_eq']
@@ -317,3 +315,62 @@ class HH_Soma(object):
 		self.m = m
 		self.h = h
 		return v, n, m, h
+
+class Dendrite(object):
+	"""docstring for Dendrite
+		Set Defaults
+		rl = 3e+6
+		d = 2e-4
+		syn_length = 0.1
+		rm = 6e+4
+		cm = 6e-4
+
+	"""
+	def __init__(self, rm, rl, cm, v_rest, synaptic_length, diameter, timestep = 1e-6, spacestep = 1e-3):
+		self.rm = rm
+		self.rl = rl
+		self.cm = cm
+		self.v_rest = v_rest
+		self.d = diameter
+		self.synaptic_length = synaptic_length
+		self.length_const = np.sqrt(rm/rl)
+		self.time_const = rm*cm
+		self.timestep = timestep
+		self.spacestep = spacestep
+		self.prev_vms = np.zeros(int(self.synaptic_length/self.spacestep) + 2)
+		self.vms = deepcopy(self.prev_vms)
+		self.coeff1 = 1 - (self.timestep / self.time_const) - 2 * ((self.length_const**2)/(self.spacestep**2)) * (self.timestep / self.time_const)
+		self.coeff2 = ((self.length_const**2)/(self.spacestep**2)) * (self.timestep / self.time_const)
+
+	def simulate_step(self, i_syn, v_soma):
+		self.vms[-1] = v_soma - self.v_rest
+		for i in range(1, int(self.synaptic_length/self.spacestep) + 1):
+			self.vms[i] = self.prev_vms[i] * self.coeff1 + self.coeff2 * (self.prev_vms[i-1] + self.prev_vms[i+1])
+		self.vms[1]	+= i_syn * (self.timestep / self.cm)
+		self.vms[0] = self.vms[1]
+		self.prev_vms = deepcopy(self.vms)
+		return self.vms
+						
+	def reset(self):
+		self.prev_vms = np.zeros(int(self.synaptic_length/self.spacestep) + 2)
+		self.vms = deepcopy(self.prev_vms)
+
+class Neuron(object):
+	"""docstring for Neuron"""
+	def __init__(self, id, input_current, model = 'hh', timestep = 1e-6): # n_class is for input layer / hidden neurons
+		self.id = id
+		self.timestep = timestep
+		if model.lower() == 'hh':
+			self.soma = HH_Soma()
+		elif model.lower() == 'mle':
+			self.soma = MLE_Soma()
+		self.dendrite = Dendrite(6e+4, 3e+6, 6e-4, self.soma.membrane_potential, 0.1, 2e-4, timestep = self.timestep)
+		self.sim_count = 0
+
+	def simulate_step(self, i_syn):
+		self.sim_count += 1
+		vms = self.dendrite.simulate_step(i_syn, self.soma.membrane_potential)
+		i_i = 4 * (vms[-2] - vms[-1]) / (np.pi * (self.dendrite.d**2) * self.dendrite.rl)
+		if self.sim_count % 1000 == 0:
+			self.soma.simulate_step(timestep = self.timestep * 1000, i_ext = [i_i, 0])
+		return [i_i, vms]
