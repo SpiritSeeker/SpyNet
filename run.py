@@ -11,10 +11,11 @@ inv = []
 
 start = time()
 for i in range(50000):
-	a = deepcopy(n.simulate_step(0.25))
-	ini.append(a[0])
-	inv.append(a[1])
+	inv.append(deepcopy(n.simulate_step(0.25)))
+	ini.append(deepcopy(n.soma.membrane_potential))
 print(time() - start)
 invs = np.asarray(inv)
-plt.plot(invs[:,-1] + n.soma.eq_points['v_eq'])
+inis = np.asarray(ini)
+plt.plot(invs)
+plt.plot(inis)
 plt.show()

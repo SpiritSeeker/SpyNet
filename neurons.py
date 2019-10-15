@@ -2,7 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import currents
 from copy import deepcopy
-from numba import cuda
+import collections
+import os
+
+cuda_path = os.popen("whereis cuda").read()
+
+if len(cuda_path) == 0:
+	cuda_available = False
+else:
+	from numba import cuda
+	cuda_available = True
 
 # Add multiple eq points with J
 
@@ -317,27 +326,29 @@ class HH_Soma(object):
 		self.h = h
 		return v, n, m, h
 
-@cuda.jit
-def single_step(d_coeff1, d_coeff2, d_prev_vms, d_vms, d_spacepoints, i_syn, v):
-	i = cuda.grid(1)
+if cuda_available:
+	@cuda.jit
+	def cuda_single_step(d_coeff1, d_coeff2, d_prev_vms, d_vms, d_spacepoints, i_syn, v):
+		i = cuda.grid(1)
 
-	for j in range(100):
-		if i == 0:
-			d_vms[0] = d_vms[1]
 		if i == d_spacepoints + 1:
 			d_vms[i] = v
 
-		cuda.syncthreads()	
+		for j in range(100):
+			if i == 0:
+				d_vms[0] = d_vms[1]
 
-		if i > 0 and i <= d_spacepoints:
-			d_vms[i] = d_prev_vms[i] * d_coeff1 + d_coeff2 * (d_prev_vms[i-1] + d_prev_vms[i+1])
+			cuda.syncthreads()	
 
-		if i == 1:
-			d_vms[i] += i_syn
+			if i > 0 and i <= d_spacepoints:
+				d_vms[i] = d_prev_vms[i] * d_coeff1 + d_coeff2 * (d_prev_vms[i-1] + d_prev_vms[i+1])
 
-		d_prev_vms[i] = d_vms[i]
+			if i == 1:
+				d_vms[i] += i_syn
 
-		cuda.syncthreads()
+			d_prev_vms[i] = d_vms[i]
+
+			cuda.syncthreads()
 
 
 class Dendrite(object):
@@ -366,38 +377,64 @@ class Dendrite(object):
 		self.vms = deepcopy(self.prev_vms)
 		self.coeff1 = 1 - (self.timestep / self.time_const) - 2 * ((self.length_const**2)/(self.spacestep**2)) * (self.timestep / self.time_const)
 		self.coeff2 = ((self.length_const**2)/(self.spacestep**2)) * (self.timestep / self.time_const)
-		self.d_coeff1 = cuda.to_device(self.coeff1)
-		self.d_coeff2 = cuda.to_device(self.coeff2)
-		self.d_prev_vms = cuda.to_device(self.prev_vms)
-		self.d_vms = cuda.to_device(self.vms)
-		self.d_spacepoints = cuda.to_device(self.spacepoints)
-		self.tpb = 32
-		self.bpg = int(np.ceil(self.spacepoints / self.tpb))
+		if cuda_available:	
+			self.d_coeff1 = cuda.to_device(self.coeff1)
+			self.d_coeff2 = cuda.to_device(self.coeff2)
+			self.d_prev_vms = cuda.to_device(self.prev_vms)
+			self.d_vms = cuda.to_device(self.vms)
+			self.d_spacepoints = cuda.to_device(self.spacepoints)
+			self.tpb = 32
+			self.bpg = int(np.ceil(self.spacepoints / self.tpb))
 
 	def simulate_step(self, i_syn, v_soma):
 		v = v_soma - self.v_rest
 		i_inp = i_syn * (self.timestep / self.cm)
-		single_step[self.bpg, self.tpb](self.coeff1, self.coeff2, self.d_prev_vms, self.d_vms, self.spacepoints, i_inp, v)
-		self.d_vms.copy_to_host(self.vms)
+		if cuda_available:	
+			cuda_single_step[self.bpg, self.tpb](self.coeff1, self.coeff2, self.d_prev_vms, self.d_vms, self.spacepoints, i_inp, v)
+			self.d_vms.copy_to_host(self.vms)
+		else:
+			self.vms[-1] = v
+			for t in range(100):
+				for i in range(1, int(self.synaptic_length/self.spacestep) + 1):
+					self.vms[i] = self.prev_vms[i] * self.coeff1 + self.coeff2 * (self.prev_vms[i-1] + self.prev_vms[i+1])
+				self.vms[1]	+= i_inp
+				self.vms[0] = self.vms[1]
+				self.prev_vms = deepcopy(self.vms)	
 		return self.vms
 						
 	def reset(self):
 		self.prev_vms = np.zeros(int(self.synaptic_length/self.spacestep) + 2)
 		self.vms = deepcopy(self.prev_vms)
 
+class Axon(object):
+	"""docstring for Axon"""
+	def __init__(self, delay, v_rest, timestep = 1e-3):
+		self.delay = delay
+		self.timestep = timestep
+		self.voltages = collections.deque(int(self.delay/self.timestep)*[v_rest])
+		self.terminal_voltage = v_rest
+
+	def simulate_step(self, v_in):
+		self.terminal_voltage = self.voltages.pop()
+		self.voltages.appendleft(v_in)
+		return self.terminal_voltage
+
+	def reset(self):
+		self.voltages = collections.deque(int(self.delay/self.timestep)*[v_rest])
+		self.terminal_voltage = v_rest
+
 class Neuron(object):
 	"""docstring for Neuron"""
-	def __init__(self, id, input_current, model = 'hh', timestep = 1e-3): # n_class is for input layer / hidden neurons
+	def __init__(self, id, input_current, timestep = 1e-3):
 		self.id = id
 		self.timestep = timestep
-		if model.lower() == 'hh':
-			self.soma = HH_Soma()
-		elif model.lower() == 'mle':
-			self.soma = MLE_Soma()
+		self.soma = HH_Soma()
 		self.dendrite = Dendrite(6e+4, 3e+6, 6e-4, self.soma.membrane_potential, 0.1, 2e-4)
-		
+		self.axon = Axon(25, self.soma.membrane_potential, timestep)
+
 	def simulate_step(self, i_syn):
 		vms = self.dendrite.simulate_step(i_syn, self.soma.membrane_potential)
 		i_i = 4 * (vms[-2] - vms[-1]) / (np.pi * (self.dendrite.d**2) * self.dendrite.rl)
 		self.soma.simulate_step(timestep = self.timestep, i_ext = [i_i, 0])
-		return [i_i, vms]
+		v_terminal = self.axon.simulate_step(self.soma.membrane_potential)
+		return v_terminal
