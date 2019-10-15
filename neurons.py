@@ -5,9 +5,9 @@ from copy import deepcopy
 import collections
 import os
 
-cuda_path = os.popen("whereis cuda").read()
+cuda_path = os.popen("whereis cuda").read().strip()
 
-if len(cuda_path) == 0:
+if cuda_path[-1] == ':':
 	cuda_available = False
 else:
 	from numba import cuda
