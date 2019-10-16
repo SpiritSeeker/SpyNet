@@ -7,13 +7,15 @@ import os
 
 cuda_path = os.popen("whereis cuda").read().strip()
 
-if cuda_path[-1] == ':':
+if cuda_path == 'cuda:':
 	cuda_available = False
 else:
-	from numba import cuda
-	cuda_available = True
-
-# Add multiple eq points with J
+	try:
+		from numba import cuda
+		cuda_available = True
+	except:
+		# Print numba here
+		cuda_available = False
 
 class MLE_Soma(object):
 	"""docstring for MLE_Soma"""
