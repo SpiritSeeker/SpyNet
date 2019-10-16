@@ -402,7 +402,8 @@ class Dendrite(object):
 				self.vms[1]	+= i_inp
 				self.vms[0] = self.vms[1]
 				self.prev_vms = deepcopy(self.vms)	
-		return self.vms
+		i_out = 4 * (self.vms[-2] - self.vms[-1]) / (np.pi * (self.d**2) * self.rl)
+		return i_out
 						
 	def reset(self):
 		self.prev_vms = np.zeros(int(self.synaptic_length/self.spacestep) + 2)
@@ -427,16 +428,23 @@ class Axon(object):
 
 class Neuron(object):
 	"""docstring for Neuron"""
-	def __init__(self, id, input_current, timestep = 1e-3):
+	def __init__(self, id, n_in, in_dists, n_out, out_delays, timestep = 1e-3):
 		self.id = id
 		self.timestep = timestep
 		self.soma = HH_Soma()
-		self.dendrite = Dendrite(6e+4, 3e+6, 6e-4, self.soma.membrane_potential, 0.1, 2e-4)
-		self.axon = Axon(25, self.soma.membrane_potential, timestep)
+		self.dendrites = []
+		self.axons = []
+		for i in range(n_in):
+			self.dendrites.append(Dendrite(6e+4, 3e+6, 6e-4, self.soma.membrane_potential, in_dists[i], 2e-4))
+		for i in range(n_out):	
+			self.axons.append(Axon(out_delays[i], self.soma.membrane_potential, timestep))
 
-	def simulate_step(self, i_syn):
-		vms = self.dendrite.simulate_step(i_syn, self.soma.membrane_potential)
-		i_i = 4 * (vms[-2] - vms[-1]) / (np.pi * (self.dendrite.d**2) * self.dendrite.rl)
+	def simulate_step(self, i_syns):
+		i_i = 0
+		for i in range(len(self.dendrites)):
+			i_i += self.dendrites[i].simulate_step(i_syns[i], self.soma.membrane_potential)
 		self.soma.simulate_step(timestep = self.timestep, i_ext = [i_i, 0])
-		v_terminal = self.axon.simulate_step(self.soma.membrane_potential)
-		return v_terminal
+		v_terminals = []
+		for i in range(len(self.axons)):
+			v_terminals.append(self.axons[i].simulate_step(self.soma.membrane_potential))
+		return v_terminals
