@@ -42,6 +42,7 @@ class SpyNet(object):
 		for i in range(self.n_index):
 			if not self.simulated[i]:
 				v_terminals = self.neurons_dict[str(i)].simulate_step(self.postsynaptic_conductances[i])
+				self.axon_terminal_voltages[i] = v_terminals
 			else:
 				self.simulated[i] = False
 
