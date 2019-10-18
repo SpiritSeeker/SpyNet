@@ -388,9 +388,9 @@ class Dendrite(object):
 			self.tpb = 32
 			self.bpg = int(np.ceil(self.spacepoints / self.tpb))
 
-	def simulate_step(self, i_syn, v_soma):
+	def simulate_step(self, g_syn, v_soma):
 		v = v_soma - self.v_rest
-		i_inp = i_syn * (self.timestep / self.cm)
+		i_inp = -1 * g_syn * (self.vms[1] + self.v_rest) * (self.timestep / self.cm)
 		if cuda_available:	
 			cuda_single_step[self.bpg, self.tpb](self.coeff1, self.coeff2, self.d_prev_vms, self.d_vms, self.spacepoints, i_inp, v)
 			self.d_vms.copy_to_host(self.vms)
@@ -439,12 +439,45 @@ class Neuron(object):
 		for i in range(n_out):	
 			self.axons.append(Axon(out_delays[i], self.soma.membrane_potential, timestep))
 
-	def simulate_step(self, i_syns):
+	def simulate_step(self, g_syns):
 		i_i = 0
 		for i in range(len(self.dendrites)):
-			i_i += self.dendrites[i].simulate_step(i_syns[i], self.soma.membrane_potential)
+			i_i += self.dendrites[i].simulate_step(g_syns[i], self.soma.membrane_potential)
 		self.soma.simulate_step(timestep = self.timestep, i_ext = [i_i, 0])
-		v_terminals = []
+		self.v_terminals = []
 		for i in range(len(self.axons)):
-			v_terminals.append(self.axons[i].simulate_step(self.soma.membrane_potential))
-		return v_terminals
+			self.v_terminals.append(self.axons[i].simulate_step(self.soma.membrane_potential))
+		return self.v_terminals
+
+class nonNMDA_Synapse(object):
+	"""docstring for nonNMDA_Synapse"""
+	def __init__(self, t_peak = 1, g_peak = 0.75):
+		self.t_peak = t_peak
+		self.const = g_peak * np.exp(1) / t_peak
+		self.g_syn = 0
+		self.spike_onset_times = []
+		self.t = 0
+		self.active_spike = False
+
+	def reset(self):
+		self.g_syn = 0
+		self.spike_onset_times = []
+		self.t = 0	
+		self.active_spike = False
+
+	def simulate_step(self, v_in, timestep = 1e-3):
+		self.t += timestep
+
+		if v_in > 0 and not self.active_spike:
+			self.active_spike = True
+			self.spike_onset_times.append(self.t)
+
+		if v_in < 0 and self.active_spike:
+			self.active_spike = False
+
+		g_temp = 0	
+		for ti in self.spike_onset_times:
+			g_temp += self.const * (self.t - ti) * np.exp(-1 * (self.t-ti)/self.t_peak)
+
+		self.g_syn = g_temp
+		return self.g_syn	
