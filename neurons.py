@@ -480,4 +480,44 @@ class nonNMDA_Synapse(object):
 			g_temp += self.const * (self.t - ti) * np.exp(-1 * (self.t-ti)/self.t_peak)
 
 		self.g_syn = g_temp
-		return self.g_syn	
+		return self.g_syn
+
+class NMDA_Synapse(object):
+	"""docstring for NMDA_Synapse"""
+	def __init__(self, g_n = 0.3, tau_1 = 80, tau_2 = 0.67, eta = 0.33, gamma = 0.06, mg_conc = 1):
+		self.g_n = g_n
+		self.tau_1 = tau_1
+		self.tau_2 = tau_2
+		self.eta = eta
+		self.gamma = gamma
+		self.mg_conc = mg_conc
+		self.g_syn = 0
+		self.spike_onset_times = []
+		self.t = 0
+		self.active_spike = False
+
+	def reset(self):
+		self.g_syn = 0
+		self.spike_onset_times = []
+		self.t = 0	
+		self.active_spike = False
+
+	def g_syn_function(self, t, v_m):
+		return self.g_n * (np.exp(-1*t/self.tau_1)-np.exp(-1*t/self.tau_2)) / (1+(self.eta*self.mg_conc*np.exp(-1*self.gamma*v_m)))
+
+	def simulate_step(self, v_in, v_m, timestep = 1e-3):
+		self.t += timestep
+
+		if v_in > 0 and not self.active_spike:
+			self.active_spike = True
+			self.spike_onset_times.append(self.t)
+
+		if v_in < 0 and self.active_spike:
+			self.active_spike = False
+
+		g_temp = 0	
+		for ti in self.spike_onset_times:
+			g_temp += self.g_syn_function(self.t-ti, v_m)
+
+		self.g_syn = g_temp
+		return self.g_syn
