@@ -170,6 +170,13 @@ class HH_Soma(object):
 		self.m = self.eq_points['m_eq']
 		self.h = self.eq_points['h_eq']
 		self.stable = True
+
+	def reset(self):
+		self.membrane_potential = self.eq_points['v_eq']
+		self.n = self.eq_points['n_eq']
+		self.m = self.eq_points['m_eq']
+		self.h = self.eq_points['h_eq']
+		self.stable = True
 	
 	def alpha_n(self, v):
 		return (np.finfo(float).eps * (self.params['an'] / ((-1 * self.params['bn'] / self.params['cn']) * np.exp((-1 * self.params['bn'] / self.params['cn'])))) + self.params['an'] * (v + self.params['bn'])) / (np.finfo(float).eps + np.exp(-1 * (v + self.params['bn']) / self.params['cn']) + self.params['dn'])
@@ -390,8 +397,12 @@ class Dendrite(object):
 
 	def simulate_step(self, g_syn, v_soma):
 		v = v_soma - self.v_rest
-		i_inp = -1 * g_syn * (self.vms[1] + self.v_rest) * (self.timestep / self.cm)
-		if cuda_available:	
+		if isinstance(g_syn, currents.CInput):
+			g = g_syn.i_next()
+			i_inp = -1 * g[0] * (self.vms[1] + self.v_rest) * (self.timestep / self.cm)
+		elif isinstance(g_syn, int)	or isinstance(g_syn, float):
+			i_inp = -1 * g_syn * (self.vms[1] + self.v_rest) * (self.timestep / self.cm)
+		if cuda_available:
 			cuda_single_step[self.bpg, self.tpb](self.coeff1, self.coeff2, self.d_prev_vms, self.d_vms, self.spacepoints, i_inp, v)
 			self.d_vms.copy_to_host(self.vms)
 		else:
@@ -448,6 +459,13 @@ class Neuron(object):
 		for i in range(len(self.axons)):
 			self.v_terminals.append(self.axons[i].simulate_step(self.soma.membrane_potential))
 		return self.v_terminals
+
+	def reset(self):
+		self.soma.reset()
+		for d in self.dendrites:
+			d.reset()
+		for a in self.dendrites:
+			a.reset()		
 
 class nonNMDA_Synapse(object):
 	"""docstring for nonNMDA_Synapse"""
