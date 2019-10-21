@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import currents
 from copy import deepcopy
 import collections
@@ -34,13 +33,6 @@ class MLE_Soma(object):
 
 	def tau_w(self, v):
 		return 1 / (np.cosh((v-self.params['V5'])/self.params['V6']))
-
-	def plot_null_clines(self, i_ext):
-		if i_ext is not 0:
-			self.get_eq_points(i_ext)
-		plt.plot(self.ncs['v'],self.ncs['v_null_cline'],self.ncs['v'],self.ncs['w_null_cline'],self.eq_points['v_eq'],self.eq_points['w_eq'],'go')
-		plt.axis([np.min(self.ncs['v']), np.max(self.ncs['v']), 0, 1])
-		plt.show()
 
 	def get_eq_points(self, i_ext):
 		v_lower = min(self.params['ek'],self.params['el'],self.params['eca'])
