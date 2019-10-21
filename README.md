@@ -21,7 +21,7 @@ pip install matplotlib
 ```
 ## Structure
 The framework facilitates building a network as a collection of neurons connected by synapses.
-Following is a brief description. Please refer to [sample_run](Untitled.ipynb) for a detailed description.
+Following is a brief description. Please refer to [get_started](get_started.ipynb) for a detailed description.
 ### Neuron
 The neuron has three components associated with it: Dendrite, Soma and Axon.
 #### Dendrite
