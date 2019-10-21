@@ -26,6 +26,18 @@ class SpyNet(object):
 		return (self.n_index-1)
 
 	def connect(self, presyn_id, postsyn_id, syn_type):
+		if presyn_id[0] >= self.n_index:
+			print('Error: Neuron with id \''+str(presyn_id[0])+'\' does not exist.')
+			return -1
+		if postsyn_id[0] >= self.n_index:
+			print('Error: Neuron with id \''+str(postsyn_id[0])+'\' does not exist.')
+			return -1
+		if presyn_id[1] >= len(self.neurons_list[presyn_id[0]].axons):
+			print('Error: Neuron \''+str(presyn_id[0])+'\' does not have an axon with id \''+str(presyn_id[1])+'\'.')
+			return -1
+		if postsyn_id[1] >= len(self.neurons_list[postsyn_id[0]].dendrites):
+			print('Error: Neuron \''+str(postsyn_id[0])+'\' does not have a dendrite with id \''+str(postsyn_id[1])+'\'.')
+			return -1
 		synapse_dict = {}
 		if syn_type == 'non-nmda':
 			synapse_dict['synapse'] = neurons.nonNMDA_Synapse()

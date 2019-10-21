@@ -42,3 +42,5 @@ Each of the synapse is modelled as a change in conductance of the postsynaptic d
 All the theory and models used are built using the knowledge gained by reading 
 Theoretical Neuroscience by Peter Dayan and L. F. Abbott and
 Biophysics of Computation by Christof Koch.
+## Contributors
+A big shoutout to [Chandana](https://github.com/Chandana-pvsl) for testing the framework.

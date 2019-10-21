@@ -368,7 +368,11 @@ class Dendrite(object):
 		self.cm = cm
 		self.v_rest = v_rest
 		self.d = diameter
-		self.synaptic_length = synaptic_length
+		if synaptic_length == 0:
+			print('Warning: Synaptic length cannot be 0. Using 1e-3 instead.')
+			self.synaptic_length = spacestep
+		else:	
+			self.synaptic_length = synaptic_length
 		self.length_const = np.sqrt(rm/rl)
 		self.time_const = rm*cm
 		self.timestep = timestep
