@@ -71,6 +71,8 @@ class SpyNet(object):
 				self.postsynaptic_conductances[s['postsyn_id'][0]][s['postsyn_id'][1]] = s['synapse'].simulate_step(self.axon_terminal_voltages[s['presyn_id'][0]][s['presyn_id'][1]], self.neurons_list[s['postsyn_id'][0]].dendrites[s['postsyn_id'][1]].vms[1])
 
 	def simulate(self, inp_index, inps, end_time = 100, timestep = 1e-3):
+		print("Total simulation time: {0:.1f}ms".format(end_time))
+		print("Starting simulation.",end='')
 		start_time = time()
 		for i in range(len(inps)):
 			for j in range(len(inps[i])):
@@ -80,20 +82,25 @@ class SpyNet(object):
 					val = inps[i][j]
 					inps[i][j] = currents.CInput()
 					inps[i][j].add(currents.CStep(val, timestep = timestep))
-
+		print('.',end='')			
 		total_steps = int(end_time/timestep)
 		membrane_potentials = np.zeros([self.n_index, total_steps+1])
 		t_s = np.linspace(0, end_time, num = total_steps + 1)
-		
+		print('.',end='')
 		for i in range(self.n_index):
 			membrane_potentials[i,0] = self.neurons_list[i].soma.membrane_potential
-		
+		print('.')
+		print('Progress: [>'+40*'.'+'] 0.0/{0:.1f}ms'.format(end_time),end='\r')
 		for t in range(1,total_steps+1):
+			if (t/timestep)%100==0:
+				progress = (t+1)*timestep
+				progress_quant = int(progress*40/end_time)
+				print('Progress: ['+progress_quant*'='+'>'+(40-progress_quant)*'.'+'] {0:.1f}/{1:.1f}ms'.format(progress,end_time),end='\r')
 			self.simulate_step(inp_index, inps, timestep = timestep)
 			for i in range(self.n_index):
 				membrane_potentials[i,t] = self.neurons_list[i].soma.membrane_potential
-
-		print("Time taken: " + "{0:.2f}".format(time()-start_time) + "s")	
+		print('Progress: ['+40*'='+'>] {0:.1f}/{0:.1f}ms'.format(end_time,end_time))
+		print("Time taken: {0:.2f}s".format(time()-start_time))	
 		return deepcopy(membrane_potentials), t_s	
 	
 	def reset(self):
